@@ -1,26 +1,43 @@
+""" Establishes the HCP pipeline for masking the DWI data from the S3 bucket
+and uploading the masked data to the S3 bucket.
+
+Steps:
+1. Read 100 subjects at a time from the caselist file
+2. copy the 3 required files from each subject, placing them all in one directory:
+    ├── <subject_id>_EdEp.bval
+    ├── <subject_id>_EdEp.bvec
+    └── <subject_id>_EdEp.nii.gz
+3. update caselist to include just the nii.gz file path to each subject in the directory
+4. run the masking pipeline on the subjects on the caselist
+5. upload the masked data and any other relevant files to the S3 bucket for each
+    subject, making a new directory for masked data in the Derivatives folder calling
+    the new directory <subject_id>_EdEp_masked
+6. delete the temporary directory containing the subject files once the upload is complete
+7. add subjects to log as completed or failed depending on whether the masking pipeline
+    was successful
+8. repeat steps 1-7 until all subjects have been processed
+"""
+
+
 import os
 import re
 import sys
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
 import time
 import shutil
 import argparse
 import subprocess
 from datetime import datetime
 from pathlib import Path
-from utilities import add_objpipe_to_path
-from utilities import prepare_files
 from config_parser import ConfigParser
 import logging
+import pipeline
+from pipeline import dwi_masking
 
 from s3path import PureS3Path
 
-add_objpipe_to_path('/home/ubuntu/ObjPipe/objPipe')
-from objPipe.subject import HcpSubject
-
-CONFIG_LOC = '/home/ubuntu/test/ObjPipe/src/hcp_config.ini'
+CONFIG_LOC = '/home/ec2-user/CNN-Diffusion-MRIBrain-Segmentation/hcp/hcp_config.ini'
 
 
 def does_exist(path):
@@ -43,7 +60,7 @@ def print_banner(banner_text):
     print('*' * 80)
 
 
-class HcpPipeline:
+class HcpMaskingPipeline:
     def __init__(self,
                  caselist_file: str,
                  group_name: str,
@@ -113,7 +130,6 @@ class HcpPipeline:
 
         self.caselist = self._get_caselist(self.start_index, self.end_index)
         self.subjects = self._get_subjects()
-
 
         print('done initializing HCP pipeline')
 
@@ -222,24 +238,14 @@ class HcpPipeline:
             print(sync_command)
             subprocess.call(sync_command, shell=True)
 
-    def _run_hcp_subject(self, subject):
+    def _run_brainmasking_pipeline(self, subject):
         """ runs the HCP subject pipeline
         Parameters
         ----------
         subject: str
             the name of the subject to run
         """
-        print(f'running HCP subject: {subject}')
-        nifti_path = self.hcp_data_root / self.group_name / subject / 'unprocessed' / 'Diffusion'
-        subject_name = re.sub(r'_V\d_MR', '', subject)
-        session_name = re.search(r'V\d', subject).group(0).replace('V', '')
-        hcpSubject = HcpSubject(
-            str(nifti_path),
-            session_name=session_name,
-            subject_name=subject_name,
-            bids_study_root=self.bids_study_root,
-            config_loc=self.config_loc)
-        hcpSubject.run_pipeline(unring=False)
+        pass
 
     def _upload_subject_data(self, subject):
         """ uploads the subject data from the local machine to the S3 bucket
@@ -347,29 +353,13 @@ class HcpPipeline:
         print(sync_command)
         subprocess.call(sync_command, shell=True)
 
-    def _prepare_cnn_masking_files(self, subject):
-        """ Renames three files to have a uniform unique prefix for the CNN
-        masking pipeline
-        Parameters
-        ----------
-        subject: str
-            the name of the subject to fix
-        """
-        pipeline_output = Path(self.hcp_data_root / self.group_name / subject /
-                               'derivatives' / 'dwipreproc' / 'Diffusion')
-        print(f'preparing CNN file format for {subject} in {pipeline_output}...')
-        prefix = re.sub(r'_V\d_MR', '', subject)
-        print(f'prefix: {prefix}')
-        prepare_files(directory=pipeline_output, prefix=prefix)
-
     def run_pipeline(self):
         """ runs the pipeline for all subjects in the caselist file """
         t0 = time.perf_counter()
         for subject in self.subjects:
             print(f'Running pipeline for {subject}...')
             self._sync_subject_data(subject)
-            self._run_hcp_subject(subject)
-            self._prepare_cnn_masking_files(subject)
+            self._run_brainmasking_pipeline(subject)
             self._upload_subject_data(subject)
             if self._verify_subject_data(subject):
                 self._log('Completed', subject)
@@ -399,7 +389,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     # instantiate pipeline object
-    hcpPipeline = HcpPipeline(
+    hcpPipeline = HcpMaskingPipeline(
         caselist_file=args.caselist_file,
         group_name=args.group_name,
         hcp_data_root=args.hcp_data_root,
@@ -413,4 +403,3 @@ if __name__ == '__main__':
         dry_run=args.dry_run)
     # run pipeline
     hcpPipeline.run_pipeline()
-
