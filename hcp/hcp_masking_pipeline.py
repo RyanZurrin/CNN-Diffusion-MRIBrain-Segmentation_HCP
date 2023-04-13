@@ -2,12 +2,16 @@
 and uploading the masked data to the S3 bucket.
 
 Steps:
-1. Read 100 subjects at a time from the caselist file
-2. copy the 3 required files from each subject, placing them all in one directory:
-    ├── <subject_id>_EdEp.bval
-    ├── <subject_id>_EdEp.bvec
-    └── <subject_id>_EdEp.nii.gz
-3. update caselist to include just the nii.gz file path to each subject in the directory
+1. Read <batch_size> subjects at a time from the caselist file
+2. copy the subject files from the S3 bucket
+        ├── s3://nda-enclave-c3371/HCP/<group_name>/<subject_id>_V1_MR/derivatives/dwipreproc/Diffusion/<subject_id>_EdEp.bval
+        ├── s3://nda-enclave-c3371/HCP/<group_name>/<subject_id>_V1_MR/derivatives/dwipreproc/Diffusion/<subject_id>_EdEp.bvec
+        └── s3://nda-enclave-c3371/HCP/<group_name>/<subject_id>_V1_MR/derivatives/dwipreproc/Diffusion/<subject_id>_EdEp.nii.gz
+    to a temporary directory on the EC2 instance at
+        ├── /data/HCP/<group_name>/<subject_id>_V1_MR/derivatives/<brainmasks>/<subject_id>_EdEp.bval
+        ├── /data/HCP/<group_name>/<subject_id>_V1_MR/derivatives/<brainmasks>/<subject_id>_EdEp.bvec
+        └── /data/HCP/<group_name>/<subject_id>_V1_MR/derivatives/<brainmasks>/<subject_id>_EdEp.nii.gz
+3. update process list to include just the nii.gz file path to each subject in the directory where each line is a subject
 4. run the masking pipeline on the subjects on the caselist
 5. upload the masked data and any other relevant files to the S3 bucket for each
     subject, making a new directory for masked data in the Derivatives folder calling
@@ -17,7 +21,6 @@ Steps:
     was successful
 8. repeat steps 1-7 until all subjects have been processed
 """
-
 
 import os
 import re
@@ -61,6 +64,10 @@ def print_banner(banner_text):
 
 
 class HcpMaskingPipeline:
+    """ The HCP pipeline for masking the DWI data from the S3 bucket and
+    uploading the masked data to the S3 bucket.
+    """
+
     def __init__(self,
                  caselist_file: str,
                  group_name: str,
@@ -73,6 +80,8 @@ class HcpMaskingPipeline:
                  start_index: int,
                  end_index: int,
                  batch_size: int,
+                 input_text: str,
+                 model_folder: str,
                  dry_run: bool):
         """ Initializes the HCP pipeline
         Parameters
@@ -110,11 +119,11 @@ class HcpMaskingPipeline:
         if group_name is not None:
             self.group_name = group_name
         if hcp_data_root is not None:
-            self.hcp_data_root = PureS3Path(hcp_data_root)
+            self.hcp_data_root = Path(hcp_data_root)
         if s3_bucket_hcp_root is not None:
             self.s3_bucket_hcp_root = PureS3Path.from_uri(s3_bucket_hcp_root)
         if bids_study_root is not None:
-            self.bids_study_root = PureS3Path(bids_study_root)
+            self.bids_study_root = Path(bids_study_root)
         if log_loc is not None:
             self.log_loc = Path(log_loc)
         if temp_log_loc is not None:
@@ -129,6 +138,10 @@ class HcpMaskingPipeline:
             self.batch_size = batch_size
         else:
             self.batch_size = self.end_index - self.start_index
+        if input_text is not None:
+            self.input_text = input_text
+        if model_folder is not None:
+            self.model_folder = model_folder
 
         # print class attributes
         self._print_class_attributes()
@@ -154,7 +167,10 @@ class HcpMaskingPipeline:
         self.dry_run = self.config.get('dry_run')
         self.start_index = int(self.config.get('start_index'))
         self.end_index = int(self.config.get('end_index'))
+        self.batch_size = int(self.config.get('batch_size'))
         self.log_loc = Path(self.config.get('log_loc'))
+        self.input_text = self.config.get('input_text')
+        self.model_folder = self.config.get('model_folder')
         self.temp_log_loc = Path(self.config.get('temp_log_loc'))
 
     def _print_class_attributes(self):
@@ -170,6 +186,9 @@ class HcpMaskingPipeline:
         print('temp_log_loc: ', self.temp_log_loc)
         print('start_index: ', self.start_index)
         print('end_index: ', self.end_index)
+        print('batch_size: ', self.batch_size)
+        print('input_text: ', self.input_text)
+        print('model_folder: ', self.model_folder)
         print('dry_run: ', self.dry_run)
         print('*' * 80)
 
@@ -223,25 +242,79 @@ class HcpMaskingPipeline:
         print(f'subjects: {subjects}')
         return subjects
 
-    def _sync_subject_data(self, subject):
-        """ syncs the subject data from the S3 bucket to the local machine
+    def _copy_subject_data_from_s3(self, subject):
+        """ copies the subject data from the HCP bucket to the required location
+        2. copy the subject files from the S3 bucket
+        ├── s3://nda-enclave-c3371/HCP/<group_name>/<subject_id>_V1_MR/derivatives/dwipreproc/Diffusion/<subject_id>_EdEp.bval
+        ├── s3://nda-enclave-c3371/HCP/<group_name>/<subject_id>_V1_MR/derivatives/dwipreproc/Diffusion/<subject_id>_EdEp.bvec
+        └── s3://nda-enclave-c3371/HCP/<group_name>/<subject_id>_V1_MR/derivatives/dwipreproc/Diffusion/<subject_id>_EdEp.nii.gz
+        to the following location
+        ├── /data/HCP/<group_name>/<subject_id>_V1_MR/derivatives/<brainmasks>/<subject_id>_EdEp.bval
+        ├── /data/HCP/<group_name>/<subject_id>_V1_MR/derivatives/<brainmasks>/<subject_id>_EdEp.bvec
+        └── /data/HCP/<group_name>/<subject_id>_V1_MR/derivatives/<brainmasks>/<subject_id>_EdEp.nii.gz
+
         Parameters
         ----------
         subject: str
             the name of the subject to sync
         """
         dry_run = self.dry_run
-        subject_path = self.s3_bucket_hcp_root / self.group_name / subject
+        print_banner(f'Copying Subject Data for {subject}')
+        subject_path = self.s3_bucket_hcp_root / self.group_name / subject / 'derivatives' / 'dwipreproc' / 'Diffusion'
         print(f'subject_path: {subject_path.as_uri()}')
         if does_exist(subject_path.as_uri()):
-            subject_name = subject_path.parts[-1]
-            save_path = self.hcp_data_root / self.group_name / subject_name
-            if dry_run:
-                sync_command = f'aws s3 sync {subject_path.as_uri()} {save_path} --dryrun'
+            print(f'{subject_path.as_uri()} exists')
+            subject_name = subject.split('_')[0]
+            save_path = self.hcp_data_root / self.group_name / subject / 'derivatives' / 'brainmasks'
+            if not dry_run:
+                copy_command = f'aws s3 sync {subject_path.as_uri()} ' \
+                               f'{save_path.as_uri()} --exclude "*" --include "*_EdEp*"'
             else:
-                sync_command = f'aws s3 sync {subject_path.as_uri()} {save_path}'
-            print(sync_command)
-            subprocess.call(sync_command, shell=True)
+                print(f'dry_run: {dry_run}')
+                copy_command = f'aws s3 sync {subject_path.as_uri()} ' \
+                               f'{save_path.as_uri()} --exclude "*" --include "*_EdEp*" --dryrun'
+            print(f'copy_command: {copy_command}')
+            subprocess.call(copy_command, shell=True)
+
+    def _create_process_list(self):
+        """  update process list to include just the nii.gz file path to each
+        subject in the directory where each line is a subject
+        """
+        print('creating process list')
+        process_list = []
+        root_dir = self.hcp_data_root / self.group_name
+        # get all the subject directories and add the path to the process list of each .nii.gz file walking the directory
+        for subject_dir in root_dir.iterdir():
+            if subject_dir.is_dir():
+                for file in subject_dir.rglob('*_EdEp.nii.gz'):
+                    process_list.append(file)
+        print(f'process_list: {process_list}')
+        return process_list
+
+    def _processlist_to_input_text(self):
+        """ converts the process list to a  text file that can be used as input
+        Parameters
+        ----------
+        process_list: list
+            the list of subjects to process
+        Returns
+        -------
+        input_text: str
+            the text to write to the input text file
+        """
+        process_list = self._create_process_list()
+        # open file at input_txt location and write each subject to a new line in the file
+        with open(self.input_text, 'w') as f:
+            for subject in process_list:
+                f.write(f'{subject.as_posix()}')
+        # check that the file was written correctly by opening it and adding contents to list and comparing to process list
+        with open(self.input_text, 'r') as f:
+            input_list = [line.rstrip() for line in f]
+        print(f'input_list: {input_list}')
+        if sorted(input_list) == sorted(process_list):
+            print('input_list matches process_list')
+        else:
+            raise ValueError('input_list does not match process_list')
 
     def _run_brainmasking_pipeline(self, subject):
         """ runs the HCP subject pipeline
@@ -259,15 +332,7 @@ class HcpMaskingPipeline:
         subject: str
             the name of the subject to upload
         """
-        dry_run = self.dry_run
-        subject_path = self.hcp_data_root / self.group_name / subject
-        bucket_path = self.s3_bucket_hcp_root / self.group_name / subject
-        if dry_run:
-            sync_command = f'aws s3 sync {subject_path} {bucket_path.as_uri()} --dryrun'
-        else:
-            sync_command = f'aws s3 sync {subject_path} {bucket_path.as_uri()}'
-        print(sync_command)
-        subprocess.call(sync_command, shell=True)
+        pass
 
     def _verify_subject_data(self, subject):
         """ verifies that the subject data has been uploaded to the S3 bucket
@@ -280,11 +345,7 @@ class HcpMaskingPipeline:
         bool
             True if the subject data exists in the S3 bucket, False otherwise
         """
-        subject_path = self.s3_bucket_hcp_root / self.group_name / subject / 'derivatives' / 'dwipreproc' / 'Diffusion'
-        if does_exist(subject_path.as_uri()):
-            return True
-        else:
-            return False
+        pass
 
     def _delete_subject_data(self, subject):
         """ deletes the subject data from the local machine
@@ -391,6 +452,8 @@ if __name__ == '__main__':
     parser.add_argument('-i', '--start_index', type=int, default=None)
     parser.add_argument('-e', '--end_index', type=lambda x: None if x == 'None' else int(x), default=None)
     parser.add_argument('-b', '--batch_size', type=int, default=None)
+    parser.add_argument('-i', '--input_text', type=str, default=None)
+    parser.add_argument('-f', '--model_folder', type=str, default=None)
     parser.add_argument('-r', '--dry_run', action='store_false')
     args = parser.parse_args()
 
