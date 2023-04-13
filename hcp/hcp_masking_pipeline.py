@@ -72,6 +72,7 @@ class HcpMaskingPipeline:
                  temp_log_loc: str,
                  start_index: int,
                  end_index: int,
+                 batch_size: int,
                  dry_run: bool):
         """ Initializes the HCP pipeline
         Parameters
@@ -124,6 +125,10 @@ class HcpMaskingPipeline:
             self.start_index = start_index
         if end_index is not None:
             self.end_index = end_index
+        if batch_size is not None:
+            self.batch_size = batch_size
+        else:
+            self.batch_size = self.end_index - self.start_index
 
         # print class attributes
         self._print_class_attributes()
@@ -385,11 +390,12 @@ if __name__ == '__main__':
     parser.add_argument('-t', '--temp_log_loc', type=str, default=None)
     parser.add_argument('-i', '--start_index', type=int, default=None)
     parser.add_argument('-e', '--end_index', type=lambda x: None if x == 'None' else int(x), default=None)
+    parser.add_argument('-b', '--batch_size', type=int, default=None)
     parser.add_argument('-r', '--dry_run', action='store_false')
     args = parser.parse_args()
 
     # instantiate pipeline object
-    hcpPipeline = HcpMaskingPipeline(
+    hcpMaskingPipeline = HcpMaskingPipeline(
         caselist_file=args.caselist_file,
         group_name=args.group_name,
         hcp_data_root=args.hcp_data_root,
@@ -400,6 +406,7 @@ if __name__ == '__main__':
         temp_log_loc=args.temp_log_loc,
         start_index=args.start_index,
         end_index=args.end_index,
+        batch_size=args.batch_size,
         dry_run=args.dry_run)
     # run pipeline
-    hcpPipeline.run_pipeline()
+    hcpMaskingPipeline.run_pipeline()
