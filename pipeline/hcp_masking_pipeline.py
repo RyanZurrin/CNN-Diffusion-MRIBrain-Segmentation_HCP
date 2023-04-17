@@ -26,7 +26,7 @@ import os
 import re
 import sys
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+# sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import time
 import shutil
 import argparse
@@ -35,12 +35,10 @@ from datetime import datetime
 from pathlib import Path
 from config_parser import ConfigParser
 import logging
-import pipeline
-from pipeline import dwi_masking
-
+from multiprocessing import Pool, cpu_count
 from s3path import PureS3Path
 
-CONFIG_LOC = '/home/ec2-user/CNN-Diffusion-MRIBrain-Segmentation/hcp/hcp_config.ini'
+CONFIG_LOC = '/home/ec2-user/CNN-Diffusion-MRIBrain-Segmentation/pipeline/hcp_config.ini'
 
 
 def does_exist(path):
@@ -67,6 +65,7 @@ class HcpMaskingPipeline:
     """ The HCP pipeline for masking the DWI data from the S3 bucket and
     uploading the masked data to the S3 bucket.
     """
+    batches_completed = 0
 
     def __init__(self,
                  caselist_file: str,
@@ -82,6 +81,7 @@ class HcpMaskingPipeline:
                  batch_size: int,
                  input_text: str,
                  model_folder: str,
+                 masking_script: str,
                  dry_run: bool):
         """ Initializes the HCP pipeline
         Parameters
@@ -136,18 +136,20 @@ class HcpMaskingPipeline:
             self.end_index = end_index
         if batch_size is not None:
             self.batch_size = batch_size
-        else:
-            self.batch_size = self.end_index - self.start_index
         if input_text is not None:
             self.input_text = input_text
         if model_folder is not None:
             self.model_folder = model_folder
+        if masking_script is not None:
+            self.masking_script = masking_script
 
         # print class attributes
         self._print_class_attributes()
 
         self.caselist = self._get_caselist(self.start_index, self.end_index)
         self.subjects = self._get_subjects()
+        # set subjects_to_process based on the batch size
+        self.subjects_to_process = self.subjects
 
         print('done initializing HCP pipeline')
 
@@ -172,6 +174,7 @@ class HcpMaskingPipeline:
         self.input_text = self.config.get('input_text')
         self.model_folder = self.config.get('model_folder')
         self.temp_log_loc = Path(self.config.get('temp_log_loc'))
+        self.masking_script = self.config.get('masking_script')
 
     def _print_class_attributes(self):
         """Prints the class attributes"""
@@ -265,14 +268,35 @@ class HcpMaskingPipeline:
         if does_exist(subject_path.as_uri()):
             print(f'{subject_path.as_uri()} exists')
             subject_name = subject.split('_')[0]
-            save_path = self.hcp_data_root / self.group_name / subject / 'derivatives' / 'brainmasks'
+            save_path = self.hcp_data_root / self.group_name / subject / 'derivatives' / 'cnn_masks'
             if not dry_run:
-                copy_command = f'aws s3 sync {subject_path.as_uri()} ' \
-                               f'{save_path.as_uri()} --exclude "*" --include "*_EdEp*"'
+                copy_command = f'aws s3 cp {subject_path.as_uri()} ' \
+                               f'{save_path} --recursive --exclude "*" --include "*_EdEp*"'
             else:
                 print(f'dry_run: {dry_run}')
-                copy_command = f'aws s3 sync {subject_path.as_uri()} ' \
-                               f'{save_path.as_uri()} --exclude "*" --include "*_EdEp*" --dryrun'
+                copy_command = f'aws s3 cp {subject_path.as_uri()} ' \
+                               f'{save_path} --recursive --exclude "*" --include "*_EdEp*" --dryrun'
+            print(f'copy_command: {copy_command}')
+            subprocess.call(copy_command, shell=True)
+
+    @staticmethod
+    def copy_subject_data_from_s3(subject_data):
+        hcp_pipeline, subject = subject_data
+        dry_run = hcp_pipeline.dry_run
+        print_banner(f'Copying Subject Data for {subject}')
+        subject_path = hcp_pipeline.s3_bucket_hcp_root / hcp_pipeline.group_name / subject / 'derivatives' / 'dwipreproc' / 'Diffusion'
+        print(f'subject_path: {subject_path.as_uri()}')
+        if does_exist(subject_path.as_uri()):
+            print(f'{subject_path.as_uri()} exists')
+            subject_name = subject.split('_')[0]
+            save_path = hcp_pipeline.hcp_data_root / hcp_pipeline.group_name / subject / 'derivatives' / 'cnn_masks'
+            if not dry_run:
+                copy_command = f'aws s3 cp {subject_path.as_uri()} ' \
+                               f'{save_path} --recursive --exclude "*" --include "*_EdEp*"'
+            else:
+                print(f'dry_run: {dry_run}')
+                copy_command = f'aws s3 cp {subject_path.as_uri()} ' \
+                               f'{save_path} --recursive --exclude "*" --include "*_EdEp*" --dryrun'
             print(f'copy_command: {copy_command}')
             subprocess.call(copy_command, shell=True)
 
@@ -282,7 +306,7 @@ class HcpMaskingPipeline:
         """
         print('creating process list')
         process_list = []
-        root_dir = self.hcp_data_root / self.group_name
+        root_dir = Path(self.hcp_data_root / self.group_name)
         # get all the subject directories and add the path to the process list of each .nii.gz file walking the directory
         for subject_dir in root_dir.iterdir():
             if subject_dir.is_dir():
@@ -291,12 +315,10 @@ class HcpMaskingPipeline:
         print(f'process_list: {process_list}')
         return process_list
 
-    def _processlist_to_input_text(self):
+    def _create_input_text(self):
         """ converts the process list to a  text file that can be used as input
         Parameters
         ----------
-        process_list: list
-            the list of subjects to process
         Returns
         -------
         input_text: str
@@ -306,24 +328,19 @@ class HcpMaskingPipeline:
         # open file at input_txt location and write each subject to a new line in the file
         with open(self.input_text, 'w') as f:
             for subject in process_list:
-                f.write(f'{subject.as_posix()}')
+                f.write(f'{subject.as_posix()}' + '\n')
         # check that the file was written correctly by opening it and adding contents to list and comparing to process list
         with open(self.input_text, 'r') as f:
             input_list = [line.rstrip() for line in f]
         print(f'input_list: {input_list}')
+
+        # make all the values in the process list as strings in case they are PosixPaths
+        process_list = list(map(str, process_list))
+
         if sorted(input_list) == sorted(process_list):
             print('input_list matches process_list')
         else:
             raise ValueError('input_list does not match process_list')
-
-    def _run_brainmasking_pipeline(self, subject):
-        """ runs the HCP subject pipeline
-        Parameters
-        ----------
-        subject: str
-            the name of the subject to run
-        """
-        pass
 
     def _upload_subject_data(self, subject):
         """ uploads the subject data from the local machine to the S3 bucket
@@ -354,11 +371,12 @@ class HcpMaskingPipeline:
         subject: str
             the name of the subject to delete
         """
-        subject_path = self.hcp_data_root / self.group_name / subject
-        print(f'deleting {subject_path}')
-
-        if subject_path.is_absolute():
-            shutil.rmtree(subject_path)
+        # subject_path = self.hcp_data_root / self.group_name / subject
+        # print(f'deleting {subject_path}')
+        #
+        # if subject_path.is_absolute():
+        #     shutil.rmtree(subject_path)
+        pass
 
     def _log(self, message, subject):
         """ logs a message to a file and to the console
@@ -369,16 +387,17 @@ class HcpMaskingPipeline:
         subject: str
             the subject to log the message for
         """
-        log_file = self.log_loc
-        if not log_file.is_absolute():
-            log_file = self.hcp_data_root / log_file
-        print(f'log_file: {log_file}')
-        if not log_file.parent.exists():
-            log_file.parent.mkdir(parents=True)
-        if not log_file.exists():
-            log_file.touch()
-        logging.basicConfig(filename=log_file, level=logging.INFO)
-        logging.info(f'{datetime.now()}: {message} {subject}')
+        # log_file = self.log_loc
+        # if not log_file.is_absolute():
+        #     log_file = self.hcp_data_root / log_file
+        # print(f'log_file: {log_file}')
+        # if not log_file.parent.exists():
+        #     log_file.parent.mkdir(parents=True)
+        # if not log_file.exists():
+        #     log_file.touch()
+        # logging.basicConfig(filename=log_file, level=logging.INFO)
+        # logging.info(f'{datetime.now()}: {message} {subject}')
+        pass
 
     def _get_logs_from_s3(self):
         """ gets the log messages from the S3 bucket
@@ -387,74 +406,171 @@ class HcpMaskingPipeline:
         str
             the log messages from the S3 bucket
         """
-        log_file = self.s3_bucket_hcp_root / self.group_name / self.log_loc.name
-        # make a temp log file to store the log messages from S3 so it does not
-        # overwrite the local log file that needs appended to it
-        if does_exist(log_file.as_uri()):
-            command = f'aws s3 cp {log_file.as_uri()} {self.temp_log_loc} --no-progress'
-            print(command)
-            subprocess.call(command, shell=True)
-            log = self.log_loc.read_text()
-            print(f'log: {log}')
-        else:
-            log = ''
-        return log
+        # log_file = self.s3_bucket_hcp_root / self.group_name / self.log_loc.name
+        # # make a temp log file to store the log messages from S3 so it does not
+        # # overwrite the local log file that needs appended to it
+        # if does_exist(log_file.as_uri()):
+        #     command = f'aws s3 cp {log_file.as_uri()} {self.temp_log_loc} --no-progress'
+        #     print(command)
+        #     subprocess.call(command, shell=True)
+        #     log = self.log_loc.read_text()
+        #     print(f'log: {log}')
+        # else:
+        #     log = ''
+        # return log
+        pass
 
     def _copy_logs_to_s3(self):
         """ copies the log messages to the S3 bucket"""
-        dry_run = self.dry_run
-        log = self._get_logs_from_s3()
-        if log:
-            log = log + self.log_loc.read_text()
-        else:
-            log = self.log_loc.read_text()
-        # remove any duplicate log messages
-        log = '\n'.join(set(log.split('\n')))
-        self.log_loc.write_text(log)
-        log_file = self.s3_bucket_hcp_root / self.group_name / self.log_loc.name
-        if dry_run:
-            sync_command = f'aws s3 cp {self.log_loc} {log_file.as_uri()}  --dryrun'
-        else:
-            sync_command = f'aws s3 cp {self.log_loc} {log_file.as_uri()} '
-        print(sync_command)
-        subprocess.call(sync_command, shell=True)
+        # dry_run = self.dry_run
+        # log = self._get_logs_from_s3()
+        # if log:
+        #     log = log + self.log_loc.read_text()
+        # else:
+        #     log = self.log_loc.read_text()
+        # # remove any duplicate log messages
+        # log = '\n'.join(set(log.split('\n')))
+        # self.log_loc.write_text(log)
+        # log_file = self.s3_bucket_hcp_root / self.group_name / self.log_loc.name
+        # if dry_run:
+        #     sync_command = f'aws s3 cp {self.log_loc} {log_file.as_uri()}  --dryrun'
+        # else:
+        #     sync_command = f'aws s3 cp {self.log_loc} {log_file.as_uri()} '
+        # print(sync_command)
+        # subprocess.call(sync_command, shell=True)
+        pass
+
+    def _run_cnn_masking(self):
+        """ runs the HCP subject pipeline using the input text file and model folder
+        as arguments into the dwi_masking.py script
+        """
+        print_banner('Running Brainmasking Pipeline')
+        # run the brainmasking pipeline making sure the dmri_seg conda environment is activated
+        # activate dmri_seg
+        conda_env = 'dmri_seg'
+        env_location = '/home/ec2-user/anaconda3/envs/dmri_seg'
+        activate_env = f'source {env_location}/bin/activate {conda_env}'
+        print(f'activate_env: {activate_env}')
+        subprocess.call(activate_env, shell=True)
+        # run the brainmasking pipeline
+        run_command = f'python {self.masking_script} ' \
+                      f'-i {self.input_text} ' \
+                      f'-f {self.model_folder}'
+        print(f'run_command: {run_command}')
+        subprocess.call(run_command, shell=True)
 
     def run_pipeline(self):
         """ runs the pipeline for all subjects in the caselist file """
         t0 = time.perf_counter()
-        for subject in self.subjects:
-            print(f'Running pipeline for {subject}...')
-            self._sync_subject_data(subject)
-            self._run_brainmasking_pipeline(subject)
-            self._upload_subject_data(subject)
-            if self._verify_subject_data(subject):
-                self._log('Completed', subject)
-            else:
-                self._log('Error', subject)
+        # for subject in self.subjects:
+        # download a total number of subjects equual to the batch size and process them and then upload them and then delete them and the
+        # repeat until all subjects have been processed
 
-            self._delete_subject_data(subject)
-        self._copy_logs_to_s3()
+        while len(self.subjects_to_process) > 0:
+            if len(self.subjects_to_process) < self.batch_size:
+                self.batch_size = len(self.subjects_to_process)
+
+            # get the subjects to process
+            subjects_to_process = self.subjects_to_process[:self.batch_size]
+            # remove the subjects from the list of subjects to process
+            self.subjects_to_process = self.subjects_to_process[self.batch_size:]
+            # process the subjects
+            print(f'subjects_to_process: {subjects_to_process}')
+            with Pool(min(cpu_count(), self.batch_size)) as pool:
+                pool.map(HcpMaskingPipeline.copy_subject_data_from_s3, [(self, subject) for subject in subjects_to_process])
+
+            # for subject in subjects_to_process:ff
+            #     self._copy_subject_data_from_s3(subject)
+            self._create_input_text()
+            self._run_cnn_masking()
+            # move all the processed files to /data/HCP/processed
+            for subject in subjects_to_process:
+                self._move_subject_data_to_processed(subject)
+
+
+            # # clean up the subjects
+            # for subject in subjects_to_process:
+            #     self._upload_subject_data(subject)
+            #     if self._verify_subject_data(subject):
+            #         self._log('Completed', subject)
+            #     else:
+            #         self._log('Error', subject)
+            #     self._delete_subject_data(subject)
+
+        #     self._copy_subject_data_from_s3(subject)
+        # self._create_input_text()
+        # self._run_brainmasking_pipeline()
+        #     self._run_brainmasking_pipeline(subject)
+        #     self._upload_subject_data(subject)
+        #     if self._verify_subject_data(subject):
+        #         self._log('Completed', subject)
+        #     else:
+        #         self._log('Error', subject)
+        #
+        #     self._delete_subject_data(subject)
+        # self._copy_logs_to_s3()
         t1 = time.perf_counter()
         print(f'Finished pipeline in {t1 - t0} seconds')
+
+    def _get_subjects_to_process(self):
+        """ gets the subjects to process from the caselist file
+        Returns
+        -------
+        list of str
+            the subjects to process
+        """
+        subjects = []
+        with open(self.caselist_file) as f:
+            for line in f:
+                subjects.append(line.strip())
+        return subjects
+        pass
+
+    def _move_subject_data_to_processed(self, subject):
+        """ moves the subject data to the processed directory, deleting the
+        original 3 files that are not needed after processing
+        the original files are:
+            *_EdEp.bval
+            *_EdEp.bvec
+            *_EdEp.nii.gz
+        Parameters
+        ----------
+        subject : str
+            the subject to move
+        """
+        # get the subject directory
+        subject_dir = Path(self.hcp_data_root / self.group_name / subject)
+        # get the processed directory
+        processed_dir = Path(self.hcp_data_root / 'processed')
+
+        # delete the original 3 files
+        file_extensions = ['*_EdEp.bval', '*_EdEp.bvec', '*_EdEp.nii.gz']
+        for ext in file_extensions:
+            for file in subject_dir.glob(ext):
+                file.unlink()
+
+        # move the subject directory to the processed directory
+        shutil.move(str(subject_dir), str(processed_dir))
 
 
 if __name__ == '__main__':
     # use argparse to parse command line arguments both short and long form
     parser = argparse.ArgumentParser()
-    parser.add_argument('-f', '--caselist_file', type=str, default=None)
-    parser.add_argument('-g', '--group_name', type=str, default=None)
-    parser.add_argument('-d', '--hcp_data_root', type=str, default=None)
-    parser.add_argument('-s', '--s3_bucket_hcp_root', type=str, default=None)
-    parser.add_argument('-b', '--bids_study_root', type=str, default=None)
-    parser.add_argument('-c', '--config_loc', type=str, default=CONFIG_LOC)
-    parser.add_argument('-l', '--log_loc', type=str, default=None)
-    parser.add_argument('-t', '--temp_log_loc', type=str, default=None)
-    parser.add_argument('-i', '--start_index', type=int, default=None)
-    parser.add_argument('-e', '--end_index', type=lambda x: None if x == 'None' else int(x), default=None)
+    parser.add_argument('-cf', '--caselist_file', type=str, default=None)
+    parser.add_argument('-gn', '--group_name', type=str, default=None)
+    parser.add_argument('-hr', '--hcp_data_root', type=str, default=None)
+    parser.add_argument('-sr', '--s3_bucket_hcp_root', type=str, default=None)
+    parser.add_argument('-br', '--bids_study_root', type=str, default=None)
+    parser.add_argument('-cl', '--config_loc', type=str, default=CONFIG_LOC)
+    parser.add_argument('-ll', '--log_loc', type=str, default=None)
+    parser.add_argument('-tl', '--temp_log_loc', type=str, default=None)
+    parser.add_argument('-si', '--start_index', type=int, default=None)
+    parser.add_argument('-ei', '--end_index', type=lambda x: None if x == 'None' else int(x), default=None)
     parser.add_argument('-b', '--batch_size', type=int, default=None)
     parser.add_argument('-i', '--input_text', type=str, default=None)
     parser.add_argument('-f', '--model_folder', type=str, default=None)
-    parser.add_argument('-r', '--dry_run', action='store_false')
+    parser.add_argument('-ms', '--masking_script', type=str, default=None)
+    parser.add_argument('-dr', '--dry_run', action='store_false')
     args = parser.parse_args()
 
     # instantiate pipeline object
@@ -470,6 +586,9 @@ if __name__ == '__main__':
         start_index=args.start_index,
         end_index=args.end_index,
         batch_size=args.batch_size,
+        input_text=args.input_text,
+        model_folder=args.model_folder,
+        masking_script=args.masking_script,
         dry_run=args.dry_run)
     # run pipeline
     hcpMaskingPipeline.run_pipeline()
