@@ -25,7 +25,7 @@ import datetime
 import pathlib
 import nibabel as nib
 import numpy as np
-from multiprocessing import Process, Manager, Value, Pool
+from multiprocessing import Process, Manager, Value, Pool, cpu_count
 from time import sleep
 
 # suffixes
@@ -39,7 +39,6 @@ output_mask = []
 
 
 def pre_process(input_file, target_list, b0_threshold=50.):
-
     from conversion import nifti_write, read_bvals
     from subprocess import Popen
 
@@ -48,22 +47,22 @@ def pre_process(input_file, target_list, b0_threshold=50.):
         # convert NRRD/NHDR to NIFIT as the first step
         # extract bse.py from just NIFTI later
         if input_file.endswith(SUFFIX_NRRD) | input_file.endswith(SUFFIX_NHDR):
-            inPrefix= input_file.split('.')[0]
+            inPrefix = input_file.split('.')[0]
             nifti_write(input_file)
-            input_file= inPrefix+ '.nii.gz'
+            input_file = inPrefix + '.nii.gz'
 
-        inPrefix= input_file.split('.nii')[0]
-        b0_nii= path.join(inPrefix+ '_bse.nii.gz')
+        inPrefix = input_file.split('.nii')[0]
+        b0_nii = path.join(inPrefix + '_bse.nii.gz')
 
         print("Extracting b0 volume...")
-        
+
         if not path.exists(b0_nii):
-            dwi= nib.load(input_file)
-            bvals= np.array(read_bvals(input_file.split('.nii')[0]+ '.bval'))
-            where_b0= np.where(bvals <= b0_threshold)[0]
-            b0= dwi.get_data()[...,where_b0].mean(-1)
-            np.nan_to_num(b0).clip(min= 0., out= b0)
-            nib.Nifti1Image(b0, affine= dwi.affine, header= dwi.header).to_filename(b0_nii)
+            dwi = nib.load(input_file)
+            bvals = np.array(read_bvals(input_file.split('.nii')[0] + '.bval'))
+            where_b0 = np.where(bvals <= b0_threshold)[0]
+            b0 = dwi.get_data()[..., where_b0].mean(-1)
+            np.nan_to_num(b0).clip(min=0., out=b0)
+            nib.Nifti1Image(b0, affine=dwi.affine, header=dwi.header).to_filename(b0_nii)
 
         target_list.append((b0_nii))
 
@@ -96,10 +95,10 @@ if __name__ == '__main__':
     if args.dwi:
         f = pathlib.Path(args.dwi)
         if f.exists():
-            print ("File exist")
+            print("File exist")
             filename = args.dwi
         else:
-            print ("File not found")
+            print("File not found")
             sys.exit(1)
 
         # Input caselist.txt
@@ -107,11 +106,10 @@ if __name__ == '__main__':
             with open(filename) as f:
                 case_arr = f.read().splitlines()
 
-
             TXT_file = path.basename(filename)
-            #print(TXT_file)
-            unique = TXT_file[:len(TXT_file) - (len(SUFFIX_TXT)+1)]
-            #print(unique)
+            # print(TXT_file)
+            unique = TXT_file[:len(TXT_file) - (len(SUFFIX_TXT) + 1)]
+            # print(unique)
             storage = path.dirname(case_arr[0])
 
             """
@@ -120,12 +118,12 @@ if __name__ == '__main__':
             """
             with Manager() as manager:
                 target_list = manager.list()
-                omat_list = []                
+                omat_list = []
                 jobs = []
-                pool = Pool(8)
-                for i in range(0,len(case_arr)):
+                pool = Pool(6)
+                for i in range(0, len(case_arr)):
                     p_process = pool.apply_async(func=pre_process, args=(case_arr[i],
-                                                             target_list))
+                                                                         target_list))
 
                 pool.close()
                 pool.join()
@@ -137,10 +135,10 @@ if __name__ == '__main__':
             with open(target_file, "w") as b0_nii:
                 for item in target_list:
                     b0_nii.write(item + "\n")
-            
+
             with open(process_file, "a") as myfile:
-                    myfile.write(str(os.getpid()) + "\n")
+                myfile.write(str(os.getpid()) + "\n")
 
             end_preprocessing_time = datetime.datetime.now()
             total_preprocessing_time = end_preprocessing_time - start_total_time
-            print ("Extract b0 Time Taken : ", round(int(total_preprocessing_time.seconds)/60, 2), " min")
+            print("Extract b0 Time Taken : ", round(int(total_preprocessing_time.seconds) / 60, 2), " min")
