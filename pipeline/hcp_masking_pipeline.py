@@ -285,11 +285,11 @@ class HcpMaskingPipeline:
             subject_name = subject.split('_')[0]
             save_path = self.hcp_data_root / self.group_name / subject / 'derivatives' / 'harmonization'
             if not dry_run:
-                copy_command = f'aws s3 mv {subject_path.as_uri()} ' \
+                copy_command = f'aws s3 cp {subject_path.as_uri()} ' \
                                f'{save_path} --recursive --exclude "*" --include "*_EdEp*"'
             else:
                 print(f'dry_run: {dry_run}')
-                copy_command = f'aws s3 mv {subject_path.as_uri()} ' \
+                copy_command = f'aws s3 cp {subject_path.as_uri()} ' \
                                f'{save_path} --recursive --exclude "*" --include "*_EdEp*" --dryrun'
             print(f'copy_command: {copy_command}')
             subprocess.call(copy_command, shell=True)
@@ -315,11 +315,11 @@ class HcpMaskingPipeline:
             subject_name = subject.split('_')[0]
             save_path = hcp_pipeline.hcp_data_root / hcp_pipeline.group_name / subject / 'derivatives' / 'harmonization'
             if not dry_run:
-                copy_command = f'aws s3 mv {subject_path.as_uri()} ' \
+                copy_command = f'aws s3 cp {subject_path.as_uri()} ' \
                                f'{save_path} --recursive --exclude "*" --include "*_EdEp*"'
             else:
                 print(f'dry_run: {dry_run}')
-                copy_command = f'aws s3 mv {subject_path.as_uri()} ' \
+                copy_command = f'aws s3 cp {subject_path.as_uri()} ' \
                                f'{save_path} --recursive --exclude "*" --include "*_EdEp*" --dryrun'
             print(f'copy_command: {copy_command}')
             subprocess.call(copy_command, shell=True)
