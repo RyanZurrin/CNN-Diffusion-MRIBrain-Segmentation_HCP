@@ -82,7 +82,6 @@ class HcpMaskingPipeline:
                  model_folder: str,
                  additional_files_loc: str,
                  masking_script: str,
-                 multiprocessing: bool,
                  dry_run: bool):
         """ Initializes the HCP pipeline
         Parameters
@@ -162,8 +161,6 @@ class HcpMaskingPipeline:
             self.additional_files_loc = Path(additional_files_loc)
         if masking_script is not None:
             self.masking_script = masking_script
-        if multiprocessing is not None:
-            self.multiprocessing = multiprocessing
 
         # print class attributes
         self._print_class_attributes()
@@ -548,7 +545,7 @@ class HcpMaskingPipeline:
                     pool.map(HcpMaskingPipeline.move_subject_data_from_s3, [(self, subject) for subject in subjects_to_process])
             else:
                 for subject in subjects_to_process:
-                    self.move_subject_data_from_s3(subject)
+                    self._move_subject_data_from_s3(subject)
 
             self._create_input_text()
             self._run_cnn_masking()
@@ -565,7 +562,7 @@ class HcpMaskingPipeline:
                     pool.map(HcpMaskingPipeline.move_subject_data_to_s3, [(self, subject) for subject in subjects_to_process])
             else:
                 for subject in subjects_to_process:
-                    self.move_subject_data_to_s3(subject)
+                    self._move_subject_data_to_s3(subject)
 
             # move additional files to S3
             self._move_additional_files_to_s3()
@@ -656,7 +653,6 @@ if __name__ == '__main__':
     parser.add_argument('-f', '--model_folder', type=str, default=None)
     parser.add_argument('-af', '--additional_files_loc', type=str, default=None)
     parser.add_argument('-ms', '--masking_script', type=str, default=None)
-    parser.add_argument('-mp', '--multiprocessing', action='store_true')
     parser.add_argument('-dr', '--dry_run', action='store_false')
     args = parser.parse_args()
 
@@ -677,7 +673,6 @@ if __name__ == '__main__':
         model_folder=args.model_folder,
         additional_files_loc=args.additional_files_loc,
         masking_script=args.masking_script,
-        multiprocessing=args.multiprocessing,
         dry_run=args.dry_run)
     # run pipeline
     hcpMaskingPipeline.run_pipeline()
