@@ -282,8 +282,7 @@ class HcpMaskingPipeline:
         print(f'subject_path: {subject_path.as_uri()}')
         if does_exist(subject_path.as_uri()):
             print(f'{subject_path.as_uri()} exists')
-            subject_name = subject.split('_')[0]
-            save_path = self.hcp_data_root / self.group_name / subject / 'derivatives' / 'harmonization'
+            save_path = self.hcp_data_root / self.group_name / subject / 'harmonization'
             if not dry_run:
                 copy_command = f'aws s3 cp {subject_path.as_uri()} ' \
                                f'{save_path} --recursive --exclude "*" --include "*_EdEp*"'
@@ -313,7 +312,7 @@ class HcpMaskingPipeline:
         if does_exist(subject_path.as_uri()):
             print(f'{subject_path.as_uri()} exists')
             subject_name = subject.split('_')[0]
-            save_path = hcp_pipeline.hcp_data_root / hcp_pipeline.group_name / subject / 'derivatives' / 'harmonization'
+            save_path = hcp_pipeline.hcp_data_root / hcp_pipeline.group_name / subject / 'harmonization'
             if not dry_run:
                 copy_command = f'aws s3 cp {subject_path.as_uri()} ' \
                                f'{save_path} --recursive --exclude "*" --include "*_EdEp*"'
@@ -375,11 +374,11 @@ class HcpMaskingPipeline:
         """
         dry_run = self.dry_run
         print_banner(f'Uploading Subject Data for {subject}')
-        subject_path = self.hcp_data_root / 'processed' / self.group_name / subject / 'derivatives' / 'harmonization'
+        subject_path = self.hcp_data_root / 'processed' / self.group_name / subject / 'harmonization'
         print(f'subject_path: {subject_path}')
         if does_exist(subject_path):
             print(f'{subject_path} exists')
-            save_path = self.s3_bucket_hcp_root / self.group_name / subject / 'derivatives' / 'harmonization'
+            save_path = self.s3_bucket_hcp_root / self.group_name / subject / 'harmonization'
             if not dry_run:
                 copy_command = f'aws s3 mv {subject_path} ' \
                                f'{save_path.as_uri()} --recursive --exclude "*" --include "*_EdEp*"'
@@ -404,11 +403,11 @@ class HcpMaskingPipeline:
         hcp_pipeline, subject = subject_data
         dry_run = hcp_pipeline.dry_run
         print_banner(f'Uploading Subject Data for {subject}')
-        subject_path = hcp_pipeline.hcp_data_root / 'processed' / hcp_pipeline.group_name / subject / 'derivatives' / 'harmonization'
+        subject_path = hcp_pipeline.hcp_data_root / 'processed' / hcp_pipeline.group_name / subject / 'harmonization'
         print(f'subject_path: {subject_path}')
         if does_exist(subject_path):
             print(f'{subject_path} exists')
-            save_path = hcp_pipeline.s3_bucket_hcp_root / hcp_pipeline.group_name / subject / 'derivatives' / 'harmonization'
+            save_path = hcp_pipeline.s3_bucket_hcp_root / hcp_pipeline.group_name / subject / 'harmonization'
             if not dry_run:
                 move_command = f'aws s3 mv {subject_path} ' \
                                f'{save_path.as_uri()} --recursive --exclude "*" --include "*_EdEp*"'
