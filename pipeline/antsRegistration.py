@@ -37,6 +37,7 @@ SUFFIX_NPY = "npy"
 SUFFIX_TXT = "txt"
 output_mask = []
 
+
 def normalize(b0_resampled, percentile, data_n):
     """
     Intensity based segmentation of MR images is hampered by radio frerquency field
@@ -55,8 +56,8 @@ def normalize(b0_resampled, percentile, data_n):
     output_file : str
                   Normalized by 99th percentile filename which is stored in disk
     """
-    print ("Normalizing input data")
-   
+    print("Normalizing input data")
+
     input_file = b0_resampled
     case_name = path.basename(input_file)
     output_name = case_name[:len(case_name) - (len(SUFFIX_NIFTI_GZ) + 1)] + '-normalized.nii.gz'
@@ -75,7 +76,6 @@ def normalize(b0_resampled, percentile, data_n):
 
 
 def ANTS_rigid_body_trans(b0_nii, result, reference=None):
-
     print("Performing ants rigid body transformation...")
     input_file = b0_nii
     case_name = path.basename(input_file)
@@ -93,6 +93,7 @@ def ANTS_rigid_body_trans(b0_nii, result, reference=None):
     transformed_file = path.join(path.dirname(input_file), output_name)
 
     result.append((transformed_file, omat_file))
+
 
 def remove_string(input_file, output_file, string):
     infile = input_file
@@ -137,10 +138,10 @@ if __name__ == '__main__':
     if args.dwi:
         f = pathlib.Path(args.dwi)
         if f.exists():
-            print ("File exist")
+            print("File exist")
             filename = args.dwi
         else:
-            print ("File not found")
+            print("File not found")
             sys.exit(1)
 
         # Input caselist.txt
@@ -148,11 +149,10 @@ if __name__ == '__main__':
             with open(filename) as f:
                 case_arr = f.read().splitlines()
 
-
             TXT_file = path.basename(filename)
-            #print(TXT_file)
-            unique = TXT_file[:len(TXT_file) - (len(SUFFIX_TXT)+1)]
-            #print(unique)
+            # print(TXT_file)
+            unique = TXT_file[:len(TXT_file) - (len(SUFFIX_TXT) + 1)]
+            # print(unique)
             storage = path.dirname(case_arr[0])
             tmp_path = storage + '/'
             trained_model_folder = args.model_folder.rstrip('/')
@@ -185,13 +185,13 @@ if __name__ == '__main__':
             manager provide a way to create data which can be shared between different processes
             """
             with Manager() as manager:
-                result = manager.list()              
+                result = manager.list()
                 ants_jobs = []
                 pool = Pool(args.cr)
-                for i in range(0,len(target_list)):
+                for i in range(0, len(target_list)):
                     p_process = pool.apply_async(func=ANTS_rigid_body_trans, args=(target_list[i],
-                                                             result, reference))
- 
+                                                                                   result, reference))
+
                 pool.close()
                 pool.join()
 
@@ -202,38 +202,38 @@ if __name__ == '__main__':
                 omat_list.append(subject_ANTS[1])
 
             with Manager() as manager:
-                data_n = manager.list() 
+                data_n = manager.list()
                 norm_jobs = []
                 pool = Pool(args.cr)
-                for i in range(0,len(target_list)):
+                for i in range(0, len(target_list)):
                     p_process = pool.apply_async(func=normalize, args=(transformed_cases[i],
-                                                             args.percentile, data_n))
+                                                                       args.percentile, data_n))
                 pool.close()
                 pool.join()
                 data_n = list(data_n)
-            
+
             count = 0
             for b0_nifti in data_n:
                 img = nib.load(b0_nifti)
                 imgU16_sagittal = img.get_data().astype(np.float32)  # sagittal view
                 imgU16_coronal = np.swapaxes(imgU16_sagittal, 0, 1)  # coronal view
-                imgU16_axial = np.swapaxes(imgU16_sagittal, 0, 2)    # Axial view
+                imgU16_axial = np.swapaxes(imgU16_sagittal, 0, 2)  # Axial view
 
                 imgU16_sagittal.tofile(f_handle_s)
                 imgU16_coronal.tofile(f_handle_c)
                 imgU16_axial.tofile(f_handle_a)
 
-                print ("Case completed = ", count)
+                print("Case completed = ", count)
                 count += 1
 
             f_handle_s.close()
             f_handle_c.close()
             f_handle_a.close()
 
-            print ("Merging npy files...")
-            cases_file_s = storage + '/'+ unique + '_' + str(os.getpid()) + '-casefile-sagittal.npy'
-            cases_file_c = storage + '/'+ unique + '_' + str(os.getpid()) + '-casefile-coronal.npy'
-            cases_file_a = storage + '/'+ unique + '_' + str(os.getpid()) + '-casefile-axial.npy'
+            print("Merging npy files...")
+            cases_file_s = storage + '/' + unique + '_' + str(os.getpid()) + '-casefile-sagittal.npy'
+            cases_file_c = storage + '/' + unique + '_' + str(os.getpid()) + '-casefile-coronal.npy'
+            cases_file_a = storage + '/' + unique + '_' + str(os.getpid()) + '-casefile-axial.npy'
 
             merged_dwi_list = []
             merged_dwi_list.append(cases_file_s)
@@ -244,7 +244,7 @@ if __name__ == '__main__':
             merge_c = np.memmap(binary_file_c, dtype=np.float32, mode='r+', shape=(256 * len(target_list), y_dim, z_dim))
             merge_a = np.memmap(binary_file_a, dtype=np.float32, mode='r+', shape=(256 * len(target_list), y_dim, z_dim))
 
-            print ("Saving data to disk...")
+            print("Saving data to disk...")
             np.save(cases_file_s, merge_s)
             np.save(cases_file_c, merge_c)
             np.save(cases_file_a, merge_a)
@@ -265,17 +265,17 @@ if __name__ == '__main__':
                     merged_b0.write(item + "\n")
 
             with open(process_file, "a") as myfile:
-                    myfile.write(str(os.getpid()) + "\n")
+                myfile.write(str(os.getpid()) + "\n")
 
             remove_string(normalized_file, registered_file, "-normalized")
             remove_string(registered_file, target_file, "-Warped")
 
             with open(target_file) as f:
-                newText=f.read().replace('.nii.gz', '-0GenericAffine.mat')
+                newText = f.read().replace('.nii.gz', '-0GenericAffine.mat')
 
             with open(mat_file, "w") as f:
                 f.write(newText)
 
             end_preprocessing_time = datetime.datetime.now()
             total_preprocessing_time = end_preprocessing_time - start_total_time
-            print ("Pre-Processing Time Taken : ", round(int(total_preprocessing_time.seconds)/60, 2), " min")
+            print("Pre-Processing Time Taken : ", round(int(total_preprocessing_time.seconds) / 60, 2), " min")

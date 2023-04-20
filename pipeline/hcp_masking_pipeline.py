@@ -519,11 +519,13 @@ class HcpMaskingPipeline:
         env_location = '/home/ec2-user/anaconda3/envs/dmri_seg'
         activate_env = f'source {env_location}/bin/activate {conda_env}'
         print(f'activate_env: {activate_env}')
+        nproc = cpu_count()
         subprocess.call(activate_env, shell=True)
         # run the brainmasking pipeline
         run_command = f'python {self.masking_script} ' \
                       f'-i {self.input_text} ' \
-                      f'-f {self.model_folder}'
+                      f'-f {self.model_folder}' \
+                      f'-nproc {nproc}'
         print(f'run_command: {run_command}')
         subprocess.call(run_command, shell=True)
 
