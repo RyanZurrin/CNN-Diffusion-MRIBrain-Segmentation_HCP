@@ -207,7 +207,6 @@ if __name__ == '__main__':
                 for item in mask_list:
                     a.write(item + "\n")
 
-            end_masking_time = datetime.datetime.now()cd
-            cd
+            end_masking_time = datetime.datetime.now()
             total_masking_time = end_masking_time - start_total_time
             print ("Masking Time Taken : ", round(int(total_masking_time.seconds)/60, 2), " min")  
