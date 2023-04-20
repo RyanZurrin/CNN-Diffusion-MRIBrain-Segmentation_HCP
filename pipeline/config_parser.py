@@ -1,9 +1,8 @@
-from abc import ABC
 from configparser import SafeConfigParser
 from collections.abc import Mapping
 
 
-class ConfigParser(Mapping, ABC):
+class ConfigParser(Mapping):
     """ConfigParser class"""
 
     def __init__(self, config_loc: str, section: str = 'aws'):
