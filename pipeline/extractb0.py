@@ -80,7 +80,7 @@ if __name__ == '__main__':
     parser.add_argument('-i', action='store', dest='dwi', type=str,
                         help="txt file containing list of /path/to/dwi, one path in each line")
 
-    parser.add_argument('-nproc', type=int, dest='cr', default=8, help='number of processes to use')
+    parser.add_argument('-nproc', type=int, dest='cr', default=6, help='number of processes to use')
 
     try:
         args = parser.parse_args()
@@ -120,7 +120,7 @@ if __name__ == '__main__':
                 target_list = manager.list()
                 omat_list = []
                 jobs = []
-                pool = Pool(6)
+                pool = Pool(processes=args.cr)
                 for i in range(0, len(case_arr)):
                     p_process = pool.apply_async(func=pre_process, args=(case_arr[i],
                                                                          target_list))

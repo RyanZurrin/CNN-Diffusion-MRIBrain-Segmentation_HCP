@@ -187,7 +187,7 @@ if __name__ == '__main__':
             with Manager() as manager:
                 result = manager.list()              
                 ants_jobs = []
-                pool = Pool(8)
+                pool = Pool(args.cr)
                 for i in range(0,len(target_list)):
                     p_process = pool.apply_async(func=ANTS_rigid_body_trans, args=(target_list[i],
                                                              result, reference))
@@ -204,7 +204,7 @@ if __name__ == '__main__':
             with Manager() as manager:
                 data_n = manager.list() 
                 norm_jobs = []
-                pool = Pool(8)
+                pool = Pool(args.cr)
                 for i in range(0,len(target_list)):
                     p_process = pool.apply_async(func=normalize, args=(transformed_cases[i],
                                                              args.percentile, data_n))
