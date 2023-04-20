@@ -516,11 +516,12 @@ class HcpMaskingPipeline:
         # run the brainmasking pipeline making sure the dmri_seg conda environment is activated
         # activate dmri_seg
         conda_env = 'dmri_seg'
-        env_location = '/home/ec2-user/anaconda3/envs/dmri_seg'
-        activate_env = f'source {env_location}/bin/activate {conda_env}'
-        print(f'activate_env: {activate_env}')
+        # check if the conda environment is activated and activate it if it is not
+        activate_env = f'conda activate {conda_env}'
         nproc = cpu_count()
         subprocess.call(activate_env, shell=True)
+        active_env = os.environ['CONDA_DEFAULT_ENV']
+        print(f'active_env: {active_env}')
         # run the brainmasking pipeline
         run_command = f'python {self.masking_script} ' \
                       f'-i {self.input_text} ' \
