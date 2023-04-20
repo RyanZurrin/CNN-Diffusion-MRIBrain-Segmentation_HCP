@@ -450,14 +450,17 @@ class HcpMaskingPipeline:
         """
         print_banner(f'Verifying Subject Data for {subject}')
         subject_name = subject.split('_')[0]
-        subject_path = self.s3_bucket_hcp_root / self.group_name / subject / 'derivatives' / 'harmonization'
-        print(f'subject_path: {subject_path.as_uri()}')
-        if does_exist(subject_path.as_uri()):
-            print(f'{subject_path.as_uri()} exists')
-            return True
-        else:
-            print(f'{subject_path.as_uri()} does not exist')
-            return False
+        subject_path = self.s3_bucket_hcp_root / self.group_name / subject / 'harmonization'
+        # list of the 5 files to check for
+        file_list = [f'{subject_name}_EdEp.bval', f'{subject_name}_EdEp.bvec',
+                     f'{subject_name}_EdEp.nii.gz', f'{subject_name}_dwi_mask.nii.gz',
+                     f'{subject_name}_dwi_merged.nii.gz']
+        for file in file_list:
+            file_path = subject_path / file
+            if not does_exist(file_path):
+                print(f'{file_path} does not exist')
+                return False
+        return True
 
     def _delete_data(self):
         """ deletes all folders in the self.hcp_root directory
@@ -622,7 +625,7 @@ class HcpMaskingPipeline:
             if subject_dir == self.additional_files_loc:
                 continue
             # get the derivatives/harmonization directory
-            derivatives_dir = subject_dir / 'derivatives' / 'harmonization'
+            derivatives_dir = subject_dir / 'harmonization'
             # walk through the files in the derivatives/harmonization directory
             for file in derivatives_dir.iterdir():
                 # if file name is process_id.txt, delete it
