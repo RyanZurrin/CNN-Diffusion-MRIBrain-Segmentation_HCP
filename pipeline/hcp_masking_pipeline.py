@@ -47,10 +47,18 @@ def does_exist(path):
     """
     command = f'aws s3 ls {path}'
     try:
-        subprocess.check_output(command, shell=True)
-        return True
+        # Save output of command to a variable and check if it is empty
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+        output, error = process.communicate()
+        return_code = process.returncode
+        if return_code != 0:
+            return False
+        else:
+            return bool(output.strip())  # Make sure to strip any white space
     except subprocess.CalledProcessError:
+        # The command will return a non-zero exit status if the path does not exist
         return False
+
 
 
 def print_banner(banner_text):
@@ -453,12 +461,12 @@ class HcpMaskingPipeline:
         subject_path = self.s3_bucket_hcp_root / self.group_name / subject / 'harmonization'
         # list of the 5 files to check for
         file_list = [f'{subject_name}_EdEp.bval', f'{subject_name}_EdEp.bvec',
-                     f'{subject_name}_EdEp.nii.gz', f'{subject_name}_dwi_mask.nii.gz',
-                     f'{subject_name}_dwi_merged.nii.gz']
+                     f'{subject_name}_EdEp.nii.gz', f'{subject_name}_EdEp_bse-multi_BrainMask.nii.gz',
+                     f'{subject_name}_EdEp_bse.nii.gz']
         for file in file_list:
-            file_path = subject_path / file
-            if not does_exist(file_path):
-                print(f'{file_path} does not exist')
+            path_to_check = subject_path / file
+            if not does_exist(path_to_check.as_uri()):
+                print(f'{file} does not exist')
                 return False
         return True
 
@@ -514,18 +522,13 @@ class HcpMaskingPipeline:
         """
         print_banner('Running Brainmasking Pipeline')
         # run the brainmasking pipeline making sure the dmri_seg conda environment is activated
-        # activate dmri_seg
-        conda_env = 'dmri_seg'
-        # check if the conda environment is activated and activate it if it is not
-        activate_env = f'conda activate {conda_env}'
         nproc = cpu_count()
-        subprocess.call(activate_env, shell=True)
         active_env = os.environ['CONDA_DEFAULT_ENV']
         print(f'active_env: {active_env}')
         # run the brainmasking pipeline
         run_command = f'python {self.masking_script} ' \
                       f'-i {self.input_text} ' \
-                      f'-f {self.model_folder}' \
+                      f'-f {self.model_folder} ' \
                       f'-nproc {nproc}'
         print(f'run_command: {run_command}')
         subprocess.call(run_command, shell=True)
@@ -575,8 +578,10 @@ class HcpMaskingPipeline:
             # verify the subjects were copied to S3 and log the message as complete or incomplete
             for subject in subjects_to_process:
                 if self._verify_subject_data_in_s3(subject):
+                    print(f'Subject {subject} successfully processed')
                     self._log('Successfully processed', subject)
                 else:
+                    print(f'Subject {subject} failed to process')
                     self._log('Failed to process', subject)
 
             # delete the files and start another batch
