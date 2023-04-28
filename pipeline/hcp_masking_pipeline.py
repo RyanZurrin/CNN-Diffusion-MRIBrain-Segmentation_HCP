@@ -90,6 +90,9 @@ class HcpMaskingPipeline:
                  model_folder: str,
                  additional_files_loc: str,
                  masking_script: str,
+                 appendage: str,
+                 file_substring: str,
+                 output_file_name: str,
                  dry_run: bool):
         """ Initializes the HCP pipeline
         Parameters
@@ -124,14 +127,16 @@ class HcpMaskingPipeline:
             the path to the additional files folder
         masking_script: str
             the path to the masking script
-        multiprocessing: bool
-            whether to run the pipeline in multiprocessing mode, the default is True
+        appendage: str
+            the appendage to add to the end of each subjects caselist ID
+        file_substring: str
+            the substring to identify files to include in final directory
         dry_run: bool
             whether to run the pipeline in dry run mode, the default is True,
             which means torun the pipeline you need to add the -r flag to the
             command line arguments
         """
-        self.allowed_files = ['_EdEp.bval', '_EdEp.bvec', '_EdEp.nii.gz', '_EdEp_bse-multi_BrainMask.nii.gz', '_EdEp_bse.nii.gz']
+
         print('initializing HCP pipeline')
         self.config_loc = config_loc
 
@@ -169,6 +174,19 @@ class HcpMaskingPipeline:
             self.additional_files_loc = Path(additional_files_loc)
         if masking_script is not None:
             self.masking_script = masking_script
+        if appendage is not None:
+            self.appendage = appendage
+        if file_substring is not None:
+            self.file_substring = file_substring
+        if output_file_name is not None:
+            self.output_file_name = output_file_name
+
+        self.allowed_files = [f'{self.file_substring}.bval',
+                              f'{self.file_substring}.bvec',
+                              f'{self.file_substring}.nii.gz',
+                              f'{self.file_substring}_bse-multi_BrainMask.nii.gz',
+                              f'{self.file_substring}_bse.nii.gz'
+                              ]
 
         # print class attributes
         self._print_class_attributes()
@@ -203,6 +221,9 @@ class HcpMaskingPipeline:
         self.temp_log_loc = Path(self.config.get('temp_log_loc'))
         self.additional_files_loc = Path(self.config.get('additional_files_loc'))
         self.masking_script = Path(self.config.get('masking_script'))
+        self.appendage = self.config.get('appendage')
+        self.file_substring = self.config.get('file_substring')
+        self.output_file_name = self.config.get('output_file_name')
         self.multiprocessing = self.config.get('multiprocessing')
 
     def _print_class_attributes(self):
@@ -223,6 +244,9 @@ class HcpMaskingPipeline:
         print('model_folder: ', self.model_folder)
         print('additional_files_loc: ', self.additional_files_loc)
         print('masking_script: ', self.masking_script)
+        print('appendage: ', self.appendage)
+        print('file_substring: ', self.file_substring)
+        print('output_file_name: ', self.output_file_name)
         print('multiprocessing: ', self.multiprocessing)
         print('dry_run: ', self.dry_run)
         print('*' * 80)
@@ -267,9 +291,9 @@ class HcpMaskingPipeline:
         print('getting subjects')
         subjects = []
         for subject in self.caselist:
-            # append _V1_MR to subject names in caselist
-            if not re.search(r'_V\d_MR', subject):
-                subject = subject + '_V1_MR'
+            # append self.appendage to the subject name
+            if not re.search(self.appendage, subject):
+                subject = subject + self.appendage
             subject_path = self.s3_bucket_hcp_root / self.group_name / subject
             print(f'subject_path: {subject_path.as_uri()}')
             if does_exist(subject_path):
@@ -290,14 +314,14 @@ class HcpMaskingPipeline:
         print(f'subject_path: {subject_path.as_uri()}')
         if does_exist(subject_path.as_uri()):
             print(f'{subject_path.as_uri()} exists')
-            save_path = self.hcp_data_root / self.group_name / subject / 'harmonization'
+            save_path = self.hcp_data_root / self.group_name / subject / self.output_file_name
             if not dry_run:
                 copy_command = f'aws s3 cp {subject_path.as_uri()} ' \
-                               f'{save_path} --recursive --exclude "*" --include "*_EdEp*"'
+                               f'{save_path} --recursive --exclude "*" --include "*{self.file_substring}*"'
             else:
                 print(f'dry_run: {dry_run}')
                 copy_command = f'aws s3 cp {subject_path.as_uri()} ' \
-                               f'{save_path} --recursive --exclude "*" --include "*_EdEp*" --dryrun'
+                               f'{save_path} --recursive --exclude "*" --include "*{self.file_substring}*" --dryrun'
             print(f'copy_command: {copy_command}')
             subprocess.call(copy_command, shell=True)
 
@@ -320,14 +344,14 @@ class HcpMaskingPipeline:
         if does_exist(subject_path.as_uri()):
             print(f'{subject_path.as_uri()} exists')
             subject_name = subject.split('_')[0]
-            save_path = hcp_pipeline.hcp_data_root / hcp_pipeline.group_name / subject / 'harmonization'
+            save_path = hcp_pipeline.hcp_data_root / hcp_pipeline.group_name / subject / hcp_pipeline.output_file_name
             if not dry_run:
                 copy_command = f'aws s3 cp {subject_path.as_uri()} ' \
-                               f'{save_path} --recursive --exclude "*" --include "*_EdEp*"'
+                               f'{save_path} --recursive --exclude "*" --include "*{hcp_pipeline.file_substring}*"'
             else:
                 print(f'dry_run: {dry_run}')
                 copy_command = f'aws s3 cp {subject_path.as_uri()} ' \
-                               f'{save_path} --recursive --exclude "*" --include "*_EdEp*" --dryrun'
+                               f'{save_path} --recursive --exclude "*" --include "*{hcp_pipeline.file_substring}*" --dryrun'
             print(f'copy_command: {copy_command}')
             subprocess.call(copy_command, shell=True)
 
@@ -341,7 +365,7 @@ class HcpMaskingPipeline:
         # get all the subject directories and add the path to the process list of each .nii.gz file walking the directory
         for subject_dir in root_dir.iterdir():
             if subject_dir.is_dir():
-                for file in subject_dir.rglob('*_EdEp.nii.gz'):
+                for file in subject_dir.rglob(f'*{self.file_substring}.nii.gz'):
                     process_list.append(file)
         print(f'process_list: {process_list}')
         return process_list
@@ -382,18 +406,18 @@ class HcpMaskingPipeline:
         """
         dry_run = self.dry_run
         print_banner(f'Uploading Subject Data for {subject}')
-        subject_path = self.hcp_data_root / 'processed' / self.group_name / subject / 'harmonization'
+        subject_path = self.hcp_data_root / 'processed' / self.group_name / subject / self.output_file_name
         print(f'subject_path: {subject_path}')
         if does_exist(subject_path):
             print(f'{subject_path} exists')
-            save_path = self.s3_bucket_hcp_root / self.group_name / subject / 'harmonization'
+            save_path = self.s3_bucket_hcp_root / self.group_name / subject / self.output_file_name
             if not dry_run:
                 copy_command = f'aws s3 mv {subject_path} ' \
-                               f'{save_path.as_uri()} --recursive --exclude "*" --include "*_EdEp*"'
+                               f'{save_path.as_uri()} --recursive --exclude "*" --include "*{self.file_substring}*"'
             else:
                 print(f'dry_run: {dry_run}')
                 copy_command = f'aws s3 mv {subject_path} ' \
-                               f'{save_path.as_uri()} --recursive --exclude "*" --include "*_EdEp*" --dryrun'
+                               f'{save_path.as_uri()} --recursive --exclude "*" --include "*{self.file_substring}*" --dryrun'
             print(f'copy_command: {copy_command}')
             subprocess.call(copy_command, shell=True)
 
@@ -411,18 +435,18 @@ class HcpMaskingPipeline:
         hcp_pipeline, subject = subject_data
         dry_run = hcp_pipeline.dry_run
         print_banner(f'Uploading Subject Data for {subject}')
-        subject_path = hcp_pipeline.hcp_data_root / 'processed' / hcp_pipeline.group_name / subject / 'harmonization'
+        subject_path = hcp_pipeline.hcp_data_root / 'processed' / hcp_pipeline.group_name / subject / hcp_pipeline.output_file_name
         print(f'subject_path: {subject_path}')
         if does_exist(subject_path):
             print(f'{subject_path} exists')
-            save_path = hcp_pipeline.s3_bucket_hcp_root / hcp_pipeline.group_name / subject / 'harmonization'
+            save_path = hcp_pipeline.s3_bucket_hcp_root / hcp_pipeline.group_name / subject / hcp_pipeline.output_file_name
             if not dry_run:
                 move_command = f'aws s3 mv {subject_path} ' \
-                               f'{save_path.as_uri()} --recursive --exclude "*" --include "*_EdEp*"'
+                               f'{save_path.as_uri()} --recursive --exclude "*" --include "*{hcp_pipeline.file_substring}*"'
             else:
                 print(f'dry_run: {dry_run}')
                 move_command = f'aws s3 mv {subject_path} ' \
-                               f'{save_path.as_uri()} --recursive --exclude "*" --include "*_EdEp*" --dryrun'
+                               f'{save_path.as_uri()} --recursive --exclude "*" --include "*{hcp_pipeline.file_substring}*" --dryrun'
             print(f'move_command: {move_command}')
             subprocess.call(move_command, shell=True)
 
@@ -458,11 +482,12 @@ class HcpMaskingPipeline:
         """
         print_banner(f'Verifying Subject Data for {subject}')
         subject_name = subject.split('_')[0]
-        subject_path = self.s3_bucket_hcp_root / self.group_name / subject / 'harmonization'
+        subject_path = self.s3_bucket_hcp_root / self.group_name / subject / self.output_file_name
+        substring = self.file_substring
         # list of the 5 files to check for
-        file_list = [f'{subject_name}_EdEp.bval', f'{subject_name}_EdEp.bvec',
-                     f'{subject_name}_EdEp.nii.gz', f'{subject_name}_EdEp_bse-multi_BrainMask.nii.gz',
-                     f'{subject_name}_EdEp_bse.nii.gz']
+        file_list = [f'{subject_name}_{substring}.bval', f'{subject_name}_{substring}.bvec',
+                     f'{subject_name}_{substring}.nii.gz', f'{subject_name}_{substring}_bse-multi_BrainMask.nii.gz',
+                     f'{subject_name}_{substring}_bse.nii.gz']
         for file in file_list:
             path_to_check = subject_path / file
             if not does_exist(path_to_check.as_uri()):
@@ -525,7 +550,7 @@ class HcpMaskingPipeline:
         nproc = cpu_count()
         active_env = os.environ['CONDA_DEFAULT_ENV']
         print(f'active_env: {active_env}')
-        # run the brainmasking pipeline
+        # run the brain masking pipeline
         run_command = f'python {self.masking_script} ' \
                       f'-i {self.input_text} ' \
                       f'-f {self.model_folder} ' \
@@ -633,7 +658,7 @@ class HcpMaskingPipeline:
             if subject_dir == self.additional_files_loc:
                 continue
             # get the derivatives/harmonization directory
-            derivatives_dir = subject_dir / 'harmonization'
+            derivatives_dir = subject_dir / self.output_file_name
             # walk through the files in the derivatives/harmonization directory
             for file in derivatives_dir.iterdir():
                 # if file name is process_id.txt, delete it
@@ -663,6 +688,9 @@ if __name__ == '__main__':
     parser.add_argument('-f', '--model_folder', type=str, default=None)
     parser.add_argument('-af', '--additional_files_loc', type=str, default=None)
     parser.add_argument('-ms', '--masking_script', type=str, default=None)
+    parser.add_argument('-ap', '--appendage', type=str, default=None)
+    parser.add_argument('-fs', '--file_substring', type=str, default=None)
+    parser.add_argument('-of', '--output_file_name', type=str, default=None)
     parser.add_argument('-dr', '--dry_run', action='store_false')
     args = parser.parse_args()
 
@@ -683,6 +711,9 @@ if __name__ == '__main__':
         model_folder=args.model_folder,
         additional_files_loc=args.additional_files_loc,
         masking_script=args.masking_script,
+        appendage=args.appendage,
+        file_substring=args.file_substring,
+        output_file_name=args.output_file_name,
         dry_run=args.dry_run)
     # run pipeline
     hcpMaskingPipeline.run_pipeline()
