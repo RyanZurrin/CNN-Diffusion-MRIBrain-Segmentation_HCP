@@ -1,2 +1,3 @@
-HCD2993079
-HCD2996590
+/home/ec2-user/HCP/TEST_DATA/BANDA001_MR/derivatives/dwipreproc/Diffusion/BANDA001_EdEp.nii.gz
+/home/ec2-user/HCP/TEST_DATA/BANDA002_MR/derivatives/dwipreproc/Diffusion/BANDA002_EdEp.nii.gz
+/home/ec2-user/HCP/TEST_DATA/BANDA003_MR/derivatives/dwipreproc/Diffusion/BANDA003_EdEp.nii.gz
