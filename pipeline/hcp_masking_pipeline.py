@@ -485,9 +485,9 @@ class HcpMaskingPipeline:
         subject_path = self.s3_bucket_hcp_root / self.group_name / subject / self.output_file_name
         substring = self.file_substring
         # list of the 5 files to check for
-        file_list = [f'{subject_name}_{substring}.bval', f'{subject_name}_{substring}.bvec',
-                     f'{subject_name}_{substring}.nii.gz', f'{subject_name}_{substring}_bse-multi_BrainMask.nii.gz',
-                     f'{subject_name}_{substring}_bse.nii.gz']
+        file_list = [f'{subject_name}{substring}.bval', f'{subject_name}{substring}.bvec',
+                     f'{subject_name}{substring}.nii.gz', f'{subject_name}{substring}_bse-multi_BrainMask.nii.gz',
+                     f'{subject_name}{substring}_bse.nii.gz']
         for file in file_list:
             path_to_check = subject_path / file
             if not does_exist(path_to_check.as_uri()):
