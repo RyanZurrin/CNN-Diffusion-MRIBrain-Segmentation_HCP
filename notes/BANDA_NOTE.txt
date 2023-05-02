@@ -1,0 +1,24 @@
+Data Preprocessing Memo
+
+Subject: BANDA Preprocessed Data renaming and preprocessing steps
+
+Selected Data Files: (* indicates any subject ID)
+
+    BANDA*_EdEp.nii.gz: Preprocessed DWI data, originally named data.nii.gz.
+    BANDA*_EdEp.bval: Gradient b-values, originally named bvals.
+    BANDA*_EdEp.bvec: Gradient directions, originally named bvecs.
+    BANDA*_EdEp_nodif_brain_mask.nii.gz: Brain mask derived from the b=0 image,
+        originally named nodif_brain_mask.nii.gz.
+
+Renaming and  Preprocessing:
+
+The selected files from each subject have been renamed to BANDA*_EdEp to comply
+with the BIDS structure utilized in our processing pipeline. The addition of the
+"EdEp" suffix reflects that the BANDA team has performed FSL top-up
+and eddy corrections during their preprocessing. The original filenames are
+preserved in this memo for reference.
+
+Date: 4/26/2023
+Prepared by: Psychiatric Neuroimaging Laboratory (PNL)
+Organization: Brigham and Women's Hospital, Harvard Medical School
+
