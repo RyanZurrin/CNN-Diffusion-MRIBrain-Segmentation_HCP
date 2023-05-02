@@ -1,0 +1,28 @@
+#!/bin/bash
+
+src_dir=$1
+dest_dir=$2
+suffixes=("${@:3}") # Get all arguments after the first two
+
+# Loop through all subject directories
+for subject in "$src_dir"/*/; do
+    subject_basename=$(basename "$subject")
+#    subject_prefix="${subject_basename%_MR}" # Remove "_MR" from the subject_basename
+     # loop through all suffixes and remove them from the subject_basename if they exist
+    for suffix in "${suffixes[@]}"; do
+        subject_basename="${subject_basename%_$suffix}"
+    done
+
+
+    new_subject_path="$dest_dir/$subject_basename/derivatives/dwipreproc/Diffusion"
+
+    # Create destination folder structure
+    mkdir -p "$new_subject_path"
+
+    # Move required files
+    mv "${subject}T1w/Diffusion/data.nii.gz" "${new_subject_path}/${subject_prefix}_EdEp.nii.gz"
+    mv "${subject}T1w/Diffusion/bvals" "${new_subject_path}/${subject_prefix}_EdEp.bval"
+    mv "${subject}T1w/Diffusion/bvecs" "${new_subject_path}/${subject_prefix}_EdEp.bvec"
+    mv "${subject}T1w/Diffusion/nodif_brain_mask.nii.gz" "${new_subject_path}/${subject_prefix}_EdEp_nodif_brain_mask.nii.gz"
+done
+
