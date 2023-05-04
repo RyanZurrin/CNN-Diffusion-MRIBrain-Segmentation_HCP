@@ -481,7 +481,8 @@ class HcpMaskingPipeline:
             True if the subject data exists in the S3 bucket, False otherwise
         """
         print_banner(f'Verifying Subject Data for {subject}')
-        subject_name = subject.split('_')[0]
+        subject_name = subject.split(self.appendage)[0]
+
         subject_path = self.s3_bucket_hcp_root / self.group_name / subject / self.output_file_name
         substring = self.file_substring
         # list of the 5 files to check for
