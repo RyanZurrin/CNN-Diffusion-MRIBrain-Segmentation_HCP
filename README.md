@@ -7,6 +7,8 @@ Brigham and Women's Hospital (Harvard Medical School).
 
 The CNN-Diffusion-MRIBrain-Segmentation-HCP repository was adapted from the CNN-Diffusion-MRIBrain-Segmentation Pipeline and is designed to run the HCP (Human Connectome Project) Masking Pipeline on a list of subjects. The pipeline involves several steps, including copying subject data from an S3 bucket, applying a brain masking process using a CNN model, and uploading the processed data back to the S3 bucket. The pipeline can be run in parallel using multiple cores, and it can process a specified number of subjects in each batch.
 
+Running this adapted pipeline requires a GPU instance therefore we have used the g4dn.2xlarge ec2 instance with the updated AMI - Brainmasking_v4.22.2023.
+
 Table of Contents
 =================
    
