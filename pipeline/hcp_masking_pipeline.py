@@ -692,8 +692,13 @@ if __name__ == '__main__':
     parser.add_argument('-ap', '--appendage', type=str, default=None)
     parser.add_argument('-fs', '--file_substring', type=str, default=None)
     parser.add_argument('-of', '--output_file_name', type=str, default=None)
-    parser.add_argument('-dr', '--dry_run', action='store_false')
+    parser.add_argument('-dr', '--dry_run', action='store_true')
+    parser.add_argument('-r', '--run', action='store_true')
     args = parser.parse_args()
+    
+    # if run is true, set dry_run to false
+    if args.run:
+        args.dry_run = False
 
     # instantiate pipeline object
     hcpMaskingPipeline = HcpMaskingPipeline(
