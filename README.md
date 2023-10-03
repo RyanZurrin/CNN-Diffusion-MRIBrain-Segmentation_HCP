@@ -1,6 +1,6 @@
 # CNN-Diffusion-MRIBrain-Segmentation_HCP
 
-## Adopted CNN Masking Pipeline Instructions for processing HCP data on AWS
+## Adapted CNN Masking Pipeline Instructions for processing HCP data on AWS
 
 ![PNL BWH HMS logo](docs/pnl-bwh-hms.png "PNL BWH HMS logo")
 
@@ -48,7 +48,7 @@ Running this adapted pipeline requires a GPU instance therefore we have used the
 
 11. Repeating the process: The pipeline runs in a loop, processing a specified number of subjects in each batch until all subjects have been processed.
 
-The python script uses the argparse library to parse command-line arguments, or additionally arguments can be set in a configuration file, which makes running the script from the terminal clean and easy. It leverages the multiprocessing library to parallelize certain tasks as well to speed up the processing.
+The Python script uses the argparse library to parse command-line arguments, or additionally, arguments can be set in a configuration file, which makes running the script from the terminal clean and easy. It leverages the multiprocessing library to parallelize certain tasks as we;ll as to speed up the processing.
 
 ## Prerequisites
 
@@ -58,7 +58,7 @@ The adapted pipeline requires a GPU instance to run. We have used the g4dn.2xlar
 
 ### Initial environment setup option 2: Building your own AMI
 
-If you do not have access to our AMI, you can create your own AWS EC2 instance by creating a new g4dn.2xlarge instance which should use the `Deep Learning AMI GPU TensorFlow 2.13 (Amazon Linux 2)` and following the instructions in the [CNN-Masking-Pipeline instructions](docs/README.md) to set up the environment and install the necessary packages within the new instance.
+If you do not have access to our AMI, can create your own AWS EC2 instance by creating a new g4dn.2xlarge instance which should use the `Deep Learning AMI GPU TensorFlow 2.13 (Amazon Linux 2)` and follow the instructions in the [CNN-Masking-Pipeline instructions](docs/README.md) to set up the environment and install the necessary packages within the new instance.
 
 ### Additional packages for the adapted pipeline
 
@@ -78,7 +78,7 @@ The `hcp_config.ini` file is essential for setting up and running the masking pi
 
 ### `[aws]` Section
 
-* `s3_bucket_hcp_root`: Root directory of the HCP data on AWS S3.
+* `s3_bucket_hcp_root`: The root directory of the HCP data on AWS S3.
   * **Example**: `s3://nda-enclave-c3371/HCP/`
   
 * `caselist_file`: Location of the case list file.
